@@ -1,3 +1,4 @@
+import './mute-auto.mjs'
 import { MUTE_LAUNCH, muteContext } from './mute.mjs'
 // 公開URLの確認。node live.mjs（ログインしていないブラウザで見る）。SKIPGH=1 で GitHub ページの確認を省く
 // grandma-refill __gr を置き換え、「遊びの通し」をゲームに合わせて書く
@@ -11,21 +12,24 @@ for (const [name, bt, opts] of [['chromium', chromium, {}], ['webkit', webkit, {
   const b = await bt.launch(bt === chromium ? MUTE_LAUNCH : {}), ctx = await b.newContext({ locale: 'ja-JP', viewport: { width: 390, height: 844 }, ...opts })
   await muteContext(ctx)
   const p = await ctx.newPage()
+  // github.io は横丁（tom3games.com）へ転送される。GitHub Pages に上げた版そのものを見るため、転送の1行だけ外して開く
+  await p.route(/tom3games\.github\.io\/grandma-refill\/(\?.*)?$/, async r => { const res = await r.fetch(); const body = (await res.text()).replace(/<script id="ghMove">[^<]*<\/script>/, ''); await r.fulfill({ response: res, body }) })
   const errs = []
   p.on('pageerror', e => errs.push(e.message)); p.on('console', m => { if (m.type() === 'error') errs.push(m.text()) })
   p.on('requestfailed', r => errs.push('fail ' + r.url()))
   await p.goto(URL0 + '?t=' + Date.now(), { waitUntil: 'networkidle' })
   await p.waitForFunction(() => window.__grReady, null, { timeout: 15000 })
-  // 遊びの通し: 始める（本物の指）→ チュートリアルをとばす → 一口 → 早回しで結果まで
+  // 遊びの通し: 始める（本物の指）→ 初めての1回（本番の中で教える）→ 一口 → 早回しで結果まで
   const tapAt = async sel => { const r = await p.evaluate(s => { const e = document.querySelector(s).getBoundingClientRect(); return { x: e.left + e.width / 2, y: e.top + e.height / 2 } }, sel); if (name === 'webkit') await p.touchscreen.tap(r.x, r.y); else await p.mouse.click(r.x, r.y) }
   await tapAt('#bStart'); await p.waitForTimeout(400)
-  if (await p.evaluate(() => !document.querySelector('#bSkip').hidden)) { await tapAt('#bSkip'); await p.waitForTimeout(300) }
+  out.push(`${name}: learn=${await p.evaluate(() => !!gr.state.learn)}`)
   await p.evaluate(() => { gr.dbg.pause(true); gr.dbg.gSet('watch', 99) })
   const bw = await p.evaluate(() => gr.bowlXY()); if (name === 'webkit') await p.touchscreen.tap(bw.x, bw.y); else await p.mouse.click(bw.x, bw.y)
   const ate = await p.evaluate(() => gr.state.stomach)
   await p.evaluate(() => { gr.dbg.pause(false); gr.dbg.speed(10) })
   await p.waitForFunction(() => !document.querySelector('#vResult').hidden, null, { timeout: 30000 })
   const muteOk = await p.evaluate(() => window.__muteOk())
+  out.push(`${name}: url=${p.url()} ver=${await p.evaluate(() => document.querySelector('script[src^="js/game.js"]').getAttribute('src'))}`)
   out.push(`${name}: ate=${ate} result=${JSON.stringify(await p.evaluate(() => window.__lastResult && window.__lastResult.title))} muteOk=${muteOk}`)
   await p.screenshot({ path: `shots/live-${name}.png` })
   const og = await p.evaluate(async () => { const r = await fetch(document.querySelector('meta[property="og:image"]').content); return r.status + ' ' + r.headers.get('content-type') })

@@ -20,12 +20,12 @@
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Zen+Kurenaido&family=Kosugi+Maru&display=swap" rel="stylesheet">
-<link rel="stylesheet" href="style.css?v=1">
+<link rel="stylesheet" href="style.css?v=2">
 <script type="importmap">{ "imports": { "three": "./vendor/three.module.min.js" } }</script>
 <script>window.__bootN=0;window.__bootStep=function(){var n=++window.__bootN,b=document.getElementById('bootBar');if(b)b.style.transform='scaleX('+Math.min(1,n/11)+')'}</script>
 <link rel="modulepreload" href="vendor/three.core.min.js" onload="__bootStep()">
 <link rel="modulepreload" href="vendor/three.module.min.js" onload="__bootStep()">
-<link rel="modulepreload" href="js/game.js?v=1" onload="__bootStep()">
+<link rel="modulepreload" href="js/game.js?v=2" onload="__bootStep()">
 <link rel="modulepreload" href="js/look.js?v=1" onload="__bootStep()">
 <link rel="preload" as="image" href="img/g_watch.webp" onload="__bootStep()">
 </head>
@@ -58,7 +58,7 @@
   <div id="bubble" class="bubble" hidden></div>
   <div id="sbubble" class="bubble spot" hidden></div>
   <div id="hint" class="hint" hidden></div>
-  <button id="bSkip" class="skip" hidden></button>
+  <div id="cutin" aria-hidden="true"><img alt=""></div>
   <div id="bowlArea"><div id="pile"></div><svg id="bowlSvg" viewBox="0 0 200 110" aria-hidden="true"><path d="M8 18h184c-4 46-38 76-92 76S12 64 8 18z" fill="#f6f1e6" stroke="#2a2118" stroke-width="5" stroke-linejoin="round"/><path d="M14 32c30 6 142 6 172 0" fill="none" stroke="#3f63a8" stroke-width="5"/><path d="M40 52l6 26M70 58l3 30M100 60v31M130 58l-3 30M160 52l-6 26" stroke="#3f63a8" stroke-width="4" stroke-linecap="round"/><path d="M70 94h60l-6 12H76z" fill="#efe7d6" stroke="#2a2118" stroke-width="4" stroke-linejoin="round"/></svg></div>
   <div id="belt" aria-hidden="true"><svg viewBox="0 0 400 60" preserveAspectRatio="none" id="beltSvg"></svg></div>
   <div id="drag" hidden><img alt=""></div>
@@ -102,8 +102,8 @@ setTimeout(function(){if(window.__jsUp)return;var d=document.createElement('div'
 </script>
 <script src="tm.js?v=2" data-game="grandma-refill"></script>
 <script src="sfx.js?v=1"></script>
-<script src="data.js?v=1"></script>
-<script type="module" src="js/game.js?v=1"></script>
+<script src="data.js?v=2"></script>
+<script type="module" src="js/game.js?v=2"></script>
 <script src="support.js?v=3" data-ja="胃薬" data-en="some antacids"></script>
 </body>
 </html>

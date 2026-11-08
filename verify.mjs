@@ -58,11 +58,7 @@ const setup = (p, o = {}) => p.evaluate(o => {
   const d = gr.dbg; d.startPlay(); d.pause(true); d.step(2)
   if (o.g) d.gSet(o.g, o.dur || 99)
   if (o.bowl) d.G.bowl = o.bowl.slice()
-  if (o.uncle) Object.assign(d.G.spot.uncle, o.uncle)
-  if (o.kid) Object.assign(d.G.spot.kid, o.kid)
-  if (o.aunt) Object.assign(d.G.aunt, o.aunt)
-  if (o.dog) Object.assign(d.G.spot.dog, o.dog)
-  d.G.aunt.next = o.aunt ? d.G.aunt.next : 999
+  d.G.aunt.next = 999; d.G.kidBack = false
   d.render()
 }, o)
 
@@ -88,25 +84,63 @@ await t('画面に「AI」「画像生成」の文字が無い（遊び方・ク
   expect(!/AI|画像生成|generated/i.test(tx), tx.match(/.{0,10}(AI|画像生成|generated).{0,10}/i))
 })
 
-// ---- 初回: チュートリアル（本物の指で運ぶ → タップで一口 → 本番）
-await t('初回のチュートリアル: 指で犬へ運ぶ→タップで一口→本番が始まる', async () => {
+// ---- 初めての1回: 本番の中で教える。指示と違う操作をしても絶対に止まらない（2026-11-09 v1 はスワイプで固まった）
+await t('初めての1回: 背中→「運べ」と指、運ぶと一口の案内、2回ずつで案内が消えて記録される', async () => {
   const b = await p.evaluate(() => { const r = document.querySelector('#bStart').getBoundingClientRect(); return { x: r.left + r.width / 2, y: r.top + r.height / 2 } })
   await p.mouse.click(b.x, b.y)
-  await p.waitForTimeout(300)
-  const s1 = await st(p); expect(s1.mode === 'tut' && s1.tut === 1 && s1.g === 'away', 'tut1 ' + JSON.stringify([s1.mode, s1.tut, s1.g]))
-  const fingerOn = await p.evaluate(() => !document.querySelector('#finger').hidden)
-  await dragTo(p, await spot(p, 'dog'))
-  await p.waitForTimeout(900)
-  const s2 = await st(p); expect(s2.tut === 2 && s2.given.dog === 1, 'tut2 ' + JSON.stringify([s2.tut, s2.given]))
-  const bw = await p.evaluate(() => gr.bowlXY()); await p.mouse.click(bw.x, bw.y)
-  await p.waitForTimeout(200)
-  const s3 = await st(p); expect(s3.tut === 3 && s3.stomach === 1, 'tut3 ' + JSON.stringify([s3.tut, s3.stomach]))
-  await p.waitForTimeout(3700)
-  const s4 = await st(p); expect(s4.mode === 'play' && s4.t > 0 && s4.stomach === 0, 'play ' + JSON.stringify([s4.mode, s4.t, s4.stomach]))
-  const saved = await p.evaluate(() => localStorage.getItem('gr_tut1'))
-  expect(saved === '1' && fingerOn, 'saved')
-  return { fingerOn }
+  await p.waitForFunction(() => gr.state.g === 'away', null, { timeout: 8000 }); await p.waitForTimeout(250)
+  const h1 = await p.evaluate(() => ({ hint: gr.texts().join('/'), finger: !!document.querySelector('#finger') && !document.querySelector('#finger').hidden, learn: gr.state.learn }))
+  expect(/運べ/.test(h1.hint) && h1.finger && h1.learn, 'carry hint ' + JSON.stringify(h1))
+  await dragTo(p, await spot(p, 'kid')); await dragTo(p, await spot(p, 'dog'))
+  const s1 = await st(p); expect(s1.given.kid === 1 && s1.given.dog === 1 && s1.caught === 0, 'carry ' + JSON.stringify([s1.given, s1.caught]))
+  await p.waitForFunction(() => gr.state.g === 'watch' && gr.state.bowl > 0, null, { timeout: 12000 }); await p.waitForTimeout(200)
+  const h2 = await p.evaluate(() => gr.texts().join('/')); expect(/タップ/.test(h2), 'bite hint ' + h2)
+  const bw = await p.evaluate(() => gr.bowlXY()); await p.mouse.click(bw.x, bw.y); await p.waitForTimeout(500); await p.mouse.click(bw.x, bw.y)
+  await p.waitForTimeout(100)
+  const s2 = await p.evaluate(() => ({ learn: gr.state.learn, saved: localStorage.getItem('gr_tut2'), texts: gr.texts() }))
+  expect(!s2.learn && s2.saved === '1' && !s2.texts.some(x => /タップ|運べ/.test(x)), 'learned ' + JSON.stringify(s2))
+  return { hint1: h1.hint.replace(/\n/g, ' ') }
 })
+// 指示と違う操作の台本（全部本物のポインタ。スワイプは down→move→up）。終わったら早回しで結果まで行けること＝固まらない
+const WRONG = {
+  'はじめ(見られている間)にお茶碗からポチへスワイプ': async (q, sw) => { const w = await q.evaluate(() => gr.bowlXY()), d = await spot(q, 'dog'); await sw(w, d) },
+  '背中の間にお茶碗を10連打して空にする': async (q, sw, tap) => { await q.waitForFunction(() => gr.state.g === 'away', null, { timeout: 8000 }); const w = await q.evaluate(() => gr.bowlXY()); for (let i = 0; i < 10; i++) { await tap(w); await q.waitForTimeout(450) } },
+  '背中の間に部屋（お茶碗の外）をスワイプ': async (q, sw) => { await q.waitForFunction(() => gr.state.g === 'away', null, { timeout: 8000 }); await sw({ x: 80, y: 420 }, { x: 300, y: 300 }); await sw({ x: 300, y: 600 }, { x: 60, y: 200 }) },
+  '背中の間にお茶碗から横へスワイプ（隠し場所の外で離す）': async (q, sw) => { await q.waitForFunction(() => gr.state.g === 'away', null, { timeout: 8000 }); const w = await q.evaluate(() => gr.bowlXY()); await sw(w, { x: w.x + 150, y: w.y - 30 }) },
+  '「タップでひと口」の時にスワイプで全部ポチへ': async (q, sw) => { await q.waitForFunction(() => gr.state.g === 'watch' && gr.state.t > 3, null, { timeout: 12000 }); const w = await q.evaluate(() => gr.bowlXY()), d = await spot(q, 'dog'); for (let i = 0; i < 4; i++) await sw(w, d) },
+  '「タップでひと口」の時に違う所をタップ': async (q, sw, tap) => { await q.waitForFunction(() => gr.state.g === 'watch' && gr.state.t > 3, null, { timeout: 12000 }); for (const pt of [{ x: 60, y: 300 }, { x: 330, y: 500 }, { x: 195, y: 120 }]) await tap(pt) },
+  '何もしない': async () => {},
+}
+for (const [eng, label] of [['chromium', 'Chromium タッチ'], ['webkit', 'WebKit']]) {
+  const bt = eng === 'chromium' ? browser : await webkit.launch()
+  for (const [name, act] of Object.entries(WRONG)) {
+    await t(`${label}: 初めての1回で「${name}」をしても止まらず最後まで進む`, async () => {
+      const q = await open(bt, { hasTouch: true, isMobile: true })
+      const cdp = eng === 'chromium' ? await q.context().newCDPSession(q) : null
+      const sw = async (a, b) => {
+        if (cdp) { await cdp.send('Input.dispatchTouchEvent', { type: 'touchStart', touchPoints: [{ x: a.x, y: a.y }] }); for (let i = 1; i <= 8; i++) { await cdp.send('Input.dispatchTouchEvent', { type: 'touchMove', touchPoints: [{ x: a.x + (b.x - a.x) * i / 8, y: a.y + (b.y - a.y) * i / 8 }] }); await q.waitForTimeout(16) } await cdp.send('Input.dispatchTouchEvent', { type: 'touchEnd', touchPoints: [] }) }
+        else { await q.mouse.move(a.x, a.y); await q.mouse.down(); for (let i = 1; i <= 8; i++) await q.mouse.move(a.x + (b.x - a.x) * i / 8, a.y + (b.y - a.y) * i / 8); await q.mouse.up() }
+      }
+      const tap = pt => q.touchscreen.tap(pt.x, pt.y)
+      const sb = await q.evaluate(() => { const r = document.querySelector('#bStart').getBoundingClientRect(); return { x: r.left + r.width / 2, y: r.top + r.height / 2 } })
+      await tap(sb); await q.waitForTimeout(150)
+      const s0 = await st(q); expect(s0.mode === 'play' && s0.learn, 'start ' + JSON.stringify([s0.mode, s0.learn]))
+      await act(q, sw, tap)
+      const a = await st(q); await q.waitForTimeout(700); const b2 = await st(q)
+      expect(b2.t > a.t + 0.4, `時間が進まない ${a.t}→${b2.t}`)
+      // 早回しで残りを流す: 結果画面まで行く・お茶碗が空のままにならない
+      let refilled = a.bowl > 0
+      await q.evaluate(() => gr.dbg.speed(10))
+      for (let i = 0; i < 60; i++) { await q.waitForTimeout(250); const s = await st(q); if (s.bowl > 0) refilled = true; if (!(await q.evaluate(() => document.querySelector('#vResult').hidden))) break }
+      const done = await q.evaluate(() => !document.querySelector('#vResult').hidden)
+      const learned = await q.evaluate(() => localStorage.getItem('gr_tut2'))
+      expect(done && refilled && learned === '1' && !q.errs.length, JSON.stringify({ done, refilled, learned, errs: q.errs }))
+      await q.close()
+      return { t: Math.round(b2.t * 10) / 10, bowl: a.bowl, caught: b2.caught }
+    })
+  }
+  if (eng === 'webkit') await bt.close()
+}
 await t('音を鳴らす操作をしても実際には無音（Chromium）・鳴らす処理は呼ばれている', async () => {
   const r = await p.evaluate(() => ({ ok: window.__muteOk(), calls: window.__soundCalls, played: Object.keys(Snd.played || {}).length }))
   expect(r.ok && r.calls > 0, JSON.stringify(r)); return r
@@ -114,7 +148,7 @@ await t('音を鳴らす操作をしても実際には無音（Chromium）・鳴
 
 // ---- 遊びの核（全部本物の指で）
 await t('背中を向けている間に、いとこへ運べる', async () => {
-  await setup(p, { g: 'away', bowl: ['f_karaage', 'f_onigiri'], kid: { n: 0, cap: 4 } })
+  await setup(p, { g: 'away', bowl: ['f_karaage', 'f_onigiri'] })
   await dragTo(p, await spot(p, 'kid')); await p.evaluate(() => gr.dbg.step(1))
   const s = await st(p); expect(s.given.kid === 1 && s.bowl === 1 && s.caught === 0, JSON.stringify([s.given, s.bowl, s.caught]))
 })
@@ -148,38 +182,44 @@ await t('見ているのに食べないと「あーん」で大きく食べさ�
   await p.evaluate(() => gr.dbg.step(60 * 4.2)); const s = await st(p)
   expect(s.stomach >= 4, JSON.stringify([s.stomach, s.g]))
 })
-await t('おじさんは口が閉じている時に入れると起きて見つかる／開いている時は入る', async () => {
-  await setup(p, { g: 'away', bowl: ['f_karaage', 'f_onigiri'], uncle: { ph: 'shut', t: 0, dur: 9 } })
-  await dragTo(p, await spot(p, 'uncle')); await p.evaluate(() => gr.dbg.step(1)); let s = await st(p)
-  expect(s.caught === 1 && s.spot.uncle.awake > 0, 'shut ' + JSON.stringify([s.caught, s.spot.uncle]))
-  await setup(p, { g: 'away', bowl: ['f_karaage', 'f_onigiri'], uncle: { ph: 'open', t: 0, dur: 9 } })
-  await dragTo(p, await spot(p, 'uncle')); s = await st(p)
-  expect(s.caught === 0 && s.given.uncle === 1, 'open ' + JSON.stringify([s.caught, s.given]))
+for (const sp of ['dog', 'kid', 'uncle', 'altar', 'vase']) {
+  await t(`いっぱいの${sp}に入れると物音でバレる（背中を向けていても）・空きがあれば入る`, async () => {
+    const cap = await p.evaluate(s => gr.CAPS[s], sp)
+    await setup(p, { g: 'away', bowl: ['f_karaage', 'f_onigiri', 'f_ebi'] })
+    await p.evaluate(([s, n]) => { gr.dbg.G.spot[s].n = n; gr.dbg.G.spot[s].dt = 0 }, [sp, cap - 1])
+    await dragTo(p, await spot(p, sp)); let s = await st(p)
+    expect(s.given[sp] === 1 && s.caught === 0 && s.spot[sp].n === cap, 'room ' + JSON.stringify([s.given[sp], s.caught, s.spot[sp].n]))
+    await dragTo(p, await spot(p, sp)); s = await st(p)
+    expect(s.given[sp] === 1 && s.caught === 1 && s.g === 'caught' && s.bowl === 2, 'full ' + JSON.stringify([s.given[sp], s.caught, s.g, s.bowl]))
+  })
+}
+await t('運んでいる間、隠し場所の輪に「入っている数」の粒が出て、いっぱいは赤い輪', async () => {
+  await setup(p, { g: 'away', bowl: ['f_karaage', 'f_onigiri'] })
+  await p.evaluate(() => { gr.dbg.G.spot.vase.n = 2; gr.dbg.G.spot.dog.n = 1 })
+  const from = await p.evaluate(() => gr.bowlXY())
+  await p.mouse.move(from.x, from.y); await p.mouse.down(); await p.mouse.move(from.x, from.y - 40); await p.mouse.move(from.x, from.y - 80)
+  await p.evaluate(() => gr.dbg.render())
+  const r = await p.evaluate(() => Object.fromEntries([...document.querySelectorAll('#rings i')].map(i => [i.dataset.s, i.querySelectorAll('b').length + ':' + i.querySelectorAll('b.on').length + (i.classList.contains('full') ? ':full' : '')])))
+  await p.mouse.move(195, 330); await p.mouse.up()
+  expect(r.vase === '2:2:full' && r.dog === '4:1' && r.uncle === '3:0', JSON.stringify(r)); return r
 })
-await t('いとこは満腹の顔の時にあげると告げ口される', async () => {
-  await setup(p, { g: 'away', bowl: ['f_karaage', 'f_onigiri'], kid: { n: 4, cap: 4 } })
-  await dragTo(p, await spot(p, 'kid')); const s = await st(p)
-  expect(s.caught === 1 && s.given.kid === 0 && s.spot.kid.tattleT > 0, JSON.stringify([s.caught, s.given.kid]))
+await t('ポチ・いとこ・おじさんは時間で消化する、仏壇と花びんはしない', async () => {
+  await setup(p, { g: 'away', dur: 99, bowl: ['f_karaage'] })
+  await p.evaluate(() => { for (const k of gr.SPOTS) gr.dbg.G.spot[k].n = 2 })
+  await p.evaluate(() => gr.dbg.step(60 * 15))
+  const s = await st(p); expect(s.spot.dog.n === 1 && s.spot.kid.n === 1 && s.spot.uncle.n === 1 && s.spot.altar.n === 2 && s.spot.vase.n === 2, JSON.stringify(Object.fromEntries(Object.entries(s.spot).map(([k, v]) => [k, v.n]))))
 })
-await t('おばちゃんが廊下を通っている時に仏壇へ置くと見つかる／いない時は写真がふくよかに', async () => {
-  await setup(p, { g: 'away', bowl: ['f_karaage', 'f_onigiri', 'f_ebi'], aunt: { st: 'pass', t: 0.2, next: 999 } })
-  await dragTo(p, await spot(p, 'altar')); let s = await st(p)
-  expect(s.caught === 1 && s.given.altar === 0, 'aunt ' + JSON.stringify([s.caught, s.given.altar]))
-  await setup(p, { g: 'away', bowl: ['f_karaage', 'f_onigiri', 'f_ebi'] })
-  await dragTo(p, await spot(p, 'altar')); await dragTo(p, await spot(p, 'altar')); await p.evaluate(() => gr.dbg.render())
-  s = await st(p); const tex = await p.evaluate(() => gr.dbg.scene.children.find(m => m.userData && /^p\d$/.test(m.userData.tex || ''))?.userData.tex)
-  expect(s.given.altar === 2 && s.caught === 0 && tex === 'p1', 'photo ' + JSON.stringify([s.given.altar, tex]))
+await t('見つかった時・あーんの時に大ゴマが出る（押す邪魔をしない）', async () => {
+  await setup(p, { g: 'away', bowl: ['f_karaage', 'f_onigiri'] })
+  await p.evaluate(() => { gr.dbg.G.spot.vase.n = 2 })
+  await dragTo(p, await spot(p, 'vase'))
+  const r = await p.evaluate(() => { const c = document.querySelector('#cutin'); return { on: c.classList.contains('on'), img: c.querySelector('img').getAttribute('src'), pe: getComputedStyle(c).pointerEvents } })
+  expect(r.on && /g_caught/.test(r.img) && r.pe === 'none', JSON.stringify(r)); return r
 })
-await t('ポチは3つ目でげっぷ。見られている時なら見つかる', async () => {
-  await setup(p, { g: 'away', bowl: ['f_karaage', 'f_onigiri', 'f_ebi'], dog: { n: 2 } })
-  await dragTo(p, await spot(p, 'dog'))
-  await p.evaluate(() => { gr.dbg.gSet('watch', 9) }); await p.evaluate(() => gr.dbg.step(60 * 2)); const s = await st(p)
-  expect(s.given.dog === 1 && s.caught === 1, JSON.stringify([s.given.dog, s.caught]))
-})
-await t('隠し場所の外で離すとお茶碗に戻る・花びんは2つまで', async () => {
+await t('隠し場所の外で離すとお茶碗に戻る・花びんに2つ入る', async () => {
   await setup(p, { g: 'away', bowl: ['f_karaage', 'f_onigiri', 'f_ebi'] })
   await dragTo(p, { x: 195, y: 330 }); let s = await st(p); expect(s.bowl === 3 && !s.held, 'back ' + s.bowl)
-  for (let i = 0; i < 3; i++) await dragTo(p, await spot(p, 'vase'))
+  for (let i = 0; i < 2; i++) await dragTo(p, await spot(p, 'vase'))
   s = await st(p); expect(s.given.vase === 2 && s.bowl === 1 && s.caught === 0, 'vase ' + JSON.stringify([s.given.vase, s.bowl]))
 })
 await t('運んでいる間は隠し場所に印が出て、離すと消える', async () => {
@@ -199,7 +239,7 @@ await t('隠し場所5つとお茶碗が画面内にあり、重ならない（3
 
 // ---- 通し（早回し）: 何もしない → お腹いっぱいで負け、結果カード
 await t('何もしない通し: ベルトが切れて負け、最低の称号・結果カードが描ける', async () => {
-  await p.evaluate(() => { const d = gr.dbg; d.startPlay(); d.G.aunt.next = 999; d.pause(false); d.speed(8) })
+  await p.evaluate(() => { const d = gr.dbg; d.startPlay(); d.pause(false); d.speed(8) })
   await p.waitForFunction(() => document.querySelector('#vResult') && !document.querySelector('#vResult').hidden, null, { timeout: 30000 })
   await p.evaluate(() => gr.dbg.speed(1))
   await p.waitForTimeout(600)
@@ -243,9 +283,9 @@ await t('同じ種なら同じ結果（再現性）', async () => {
   const r = await p.evaluate(() => [gr.sim('reader', 77), gr.sim('reader', 77)].map(x => x.points + ':' + x.kg + ':' + x.caught))
   expect(r[0] === r[1], r)
 })
-await t('まれな出来事: スイカ丸ごと・おじいちゃんの幽霊が出る（種で出し分け）', async () => {
-  const r = await p.evaluate(() => { let melon = 0, ghost = 0; for (let s = 1; s <= 40; s++) { const x = gr.sim('reader', s * 31, { events: true }); if (x.events.some(e => e[1] === 'melon')) melon++; if (x.events.some(e => e[1] === 'ghost')) ghost++ } return { melon, ghost } })
-  expect(r.melon >= 4 && r.melon <= 24 && r.ghost >= 3 && r.ghost <= 24, JSON.stringify(r)); return r
+await t('まれな出来事: スイカ丸ごと・おじいちゃんの幽霊・いとこの裏切りが種で出し分け、おすそわけは毎回', async () => {
+  const r = await p.evaluate(() => { let melon = 0, ghost = 0, kidback = 0, aunt = 0; for (let s = 1; s <= 40; s++) { const x = gr.sim('reader', s * 31, { events: true }); const has = n => x.events.some(e => e[1] === n); if (has('melon')) melon++; if (has('ghost')) ghost++; if (has('kidback')) kidback++; if (has('aunt')) aunt++ } return { melon, ghost, kidback, aunt } })
+  expect(r.melon >= 4 && r.melon <= 24 && r.ghost >= 3 && r.ghost <= 24 && r.kidback >= 4 && r.kidback <= 30 && r.aunt >= 36, JSON.stringify(r)); return r
 })
 await t('英語に切り替わる（タイトル・遊び方）', async () => {
   await p.evaluate(() => { gr.dbg.G.mode = 'title'; document.querySelector('#vResult').hidden = true; document.querySelector('#vPlay').hidden = true; document.querySelector('#vTitle').hidden = false })

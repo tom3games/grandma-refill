@@ -1,4 +1,4 @@
-- snd/amb_cicada.mp3: File:Chorus Cicada singing.ogg / Siobhan Leachman / CC0
+- snd/amb_cicada.mp3: File:Chorus Cicada singing.ogg / Siobhan Leachman / CC0（2026-11-09 v2 で使うのをやめた。本人「セミうざい」）
 - snd/chime.mp3: File:Windchimes.ogg / Esc861 / Public domain
 - snd/chop1.mp3: 100 CC0 SFX / rubberduck / CC0
 - snd/chop2.mp3: 100 CC0 SFX / rubberduck / CC0
@@ -34,3 +34,4 @@
 - js/look.js: tom3games の共通部品
 - vendor/three*.min.js: three.js（MIT）
 - フォント: Zen Kurenaido、Kosugi Maru（Google Fonts、SIL Open Font License）
+- snd/amb_fan.mp3: File:AT&T copper fan small box.ogg / Ranch9613 / CC0

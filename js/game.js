@@ -157,6 +157,7 @@ const altarFood = [], vaseFood = []
 for (let i = 0; i < 6; i++) { const p = paper('f_karaage', 0.07); p.visible = false; altarFood.push(p) }
 for (let i = 0; i < 3; i++) { const p = paper('f_ebi', 0.11); p.visible = false; vaseFood.push(p) }
 
+const SPOTS = ['dog', 'kid', 'uncle', 'altar', 'vase']
 // 隠し場所の「おかずを入れる口」（画面座標を出すための点）
 const ANCHOR = {
   dog: new THREE.Vector3(-0.42, 0.2, 0.22),
@@ -165,7 +166,7 @@ const ANCHOR = {
   altar: new THREE.Vector3(1.03, 0.5, R.z0 + 0.52),
   vase: new THREE.Vector3(-0.95, 0.55, R.z0 + 0.32),
 }
-const SPOTS = ['dog', 'kid', 'uncle', 'altar', 'vase']
+const SAY_AT = { aunt: new THREE.Vector3(0.46, 1.25, R.z0 - 0.1) }
 
 // ---- カメラ（座っている自分の目。縦長ほど画角を広げる）
 const CAM = { p: new THREE.Vector3(0.02, 1.38, 1.42), t: new THREE.Vector3(0.05, 0.52, -0.75) }
@@ -179,29 +180,35 @@ function resize() {
 addEventListener('resize', resize); resize()
 
 // ============================================================ 遊びの状態（sim でも同じ処理を回す）
-const DUR = 120, CAP = 36, BITE_CD = 0.42, WAIT = 2.8, WORRY = 1.8, AAAN_BITES = 4, MAXBOWL = 12
-const CAPS = { dog: 5, uncle: 4, altar: 5, vase: 2 }
-const DIGEST = { dog: 16, kid: 13 }
-const TUT_KEY = 'gr_tut1'
+const DUR = 120, CAP = 36, BITE_CD = 0.42, WAIT = 2.8, WORRY = 1.8, AAAN_BITES = 4, MAXBOWL = 16
+// 隠し場所のルールは1つだけ: いっぱいの所に入れると物音でバレる（v2。v1 は場所ごとに別のルールが5つあった）
+const CAPS = { dog: 4, kid: 4, uncle: 3, altar: 5, vase: 2 }
+const DIGEST = { dog: 12, kid: 10, uncle: 14 }
+const TUT_KEY = 'gr_tut2'
 const G = { mode: 'boot', t: 0, clock: 0, texts: { bubble: null, sbubble: null, hint: null }, paused: false, speed: 1, playNo: 0 }
 let rng = mulberry(1)
 const rnd = (a, b) => a + (b - a) * rng()
 
-function newGame(seed) {
+function newGame(seed, learn = false) {
   G.seed = seed; rng = mulberry(seed)
   G.t = 0; G.mode = 'play'; G.over = null; G.endT = 0
   G.bowl = ['f_karaage', 'f_onigiri']; G.bit = false; G.held = null; G.biteCd = 0
   G.stomach = 0; G.caught = 0; G.bites = 0; G.watchedBites = 0; G.forced = 0; G.streak = 0
-  G.spot = { dog: { n: 0, dt: 0, burpAt: 0, burpT: 0 }, kid: { n: 0, dt: 0, cap: 3 + Math.floor(rng() * 3), tattleT: 0 }, uncle: { n: 0, ph: 'open', t: 0, dur: rnd(2.0, 2.8), awake: 0 }, altar: { n: 0, total: 0 }, vase: { n: 0 } }
+  G.spot = {}; for (const k of SPOTS) G.spot[k] = { n: 0, dt: 0, cap: CAPS[k], react: 0 }
+  G.spot.altar.total = 0
   G.given = { dog: 0, kid: 0, uncle: 0, altar: 0, vase: 0 }
-  G.aunt = { st: 'none', t: 0, next: rnd(15, 22), notice: 0 }
+  // おばちゃんの「おすそわけ」（ルールではない。おかずが増えるだけ）
+  G.aunt = { st: 'none', t: 0, next: rnd(38, 52) }
   G.trips = [rnd(26, 32), rnd(58, 66), rnd(88, 96)]; G.trip = 0
+  G.phoneTrip = Math.floor(rng() * 3)
   G.melon = params.has('melon') ? true : params.has('nomelon') ? false : rng() < 0.3
   G.ghostFlag = params.has('ghost') ? true : params.has('noghost') ? false : rng() < 0.35
+  G.kidBack = rng() < 0.4; G.kidBackAt = 0
   G.ghostAt = 0; G.ghostT = 0; G.ghostUsed = false; G.melonDone = false
-  G.g = { st: 'watch', t: 0, dur: 3.6, since: 0, worried: false, fake: false, line: 0 }
+  G.g = { st: 'watch', t: 0, dur: 3.6, since: 0, worried: false, fake: false, line: 0, lap: 0 }
   G.events = []
-  G.tut = null
+  // 初めての1回: 本番の中で教える（止まって待つ段階を作らない。2026-11-09 v1 は指示と違う操作でお茶碗が空になり固まった）
+  G.learn = learn ? { carry: 0, bite: 0, shown: '' } : null
   enterWatch('start')
 }
 function progress() { return clamp(G.t / DUR, 0, 1) }
@@ -212,26 +219,27 @@ function ev(e) { if (G.events.length < 400) G.events.push([Math.round(G.t * 10) 
 function addFood(n, kind) { for (let i = 0; i < n && G.bowl.length < MAXBOWL; i++) G.bowl.push(kind || GR.FOODS[Math.floor(rng() * GR.FOODS.length)]) }
 function enterWatch(from) {
   const g = G.g, p = progress()
-  gSet('watch', from === 'heap' ? 3.0 : rnd(lerp(3.4, 2.6, p), lerp(4.6, 3.6, p)))
+  g.lap++
+  gSet('watch', from === 'start' ? (G.learn ? 1.6 : 2.4) : from === 'heap' ? 3.0 : rnd(lerp(3.4, 2.6, p), lerp(4.6, 3.6, p)))
   g.since = 0; g.worried = false
   let add = 0
-  if (from === 'back') { add = G.melonNow ? 4 : 3; addFood(add, G.melonNow ? 'f_suika' : null) }
+  if (from === 'back') { add = G.melonNow ? 4 : 3 + (p > 0.6 ? 1 : 0); addFood(add, G.melonNow ? 'f_suika' : null) }
   else if (from !== 'heap' && from !== 'aaan') { const target = p < 0.22 ? 2 : p < 0.6 ? 3 : 4; add = Math.max(0, target - G.bowl.length); if (from === 'start') add = 0; addFood(add) }
   if (add) { sfx('dish', { vol: 0.6 }); bowlDom(true) }
-  if (from === 'back' && G.melonNow) { say('bubble', L(GR.G.melon), 'loud', 2.4); sfx('j_rare', { vol: 0.6 }); G.melonNow = false; G.melonDone = true; ev('melon') }
+  if (from === 'back' && G.melonNow) { say('bubble', L(GR.G.melon), 'loud', 2.4); cutin('g_melon'); sfx('j_rare', { vol: 0.6 }); G.melonNow = false; G.melonDone = true; ev('melon') }
   else if (from === 'back') say('bubble', pickLine(GR.G.back))
-  else if (add) say('bubble', pickLine(GR.G.refill))
+  else if (add) say('bubble', pickLine(p < 0.4 ? GR.G.refill : p < 0.75 ? GR.G.refill2 : GR.G.refill3))
   else if (from !== 'heap' && from !== 'aaan') say('bubble', pickLine(GR.G.watch))
 }
-function pickLine(arr) { G.g.line = (G.g.line + 1 + Math.floor(rng() * 2)) % arr.length; return L(arr[G.g.line]) }
+function pickLine(arr) { G.g.line = (G.g.line + 1 + Math.floor(rng() * 2)) % arr.length; return L(arr[G.g.line % arr.length]) }
 function advance() {
   const g = G.g, p = progress()
   switch (g.st) {
     case 'watch':
-      if (G.trip < G.trips.length && G.t >= G.trips[G.trip]) { G.trip++; G.melonNow = G.trip === 3 && G.melon; say('bubble', pickLine(GR.G.kitchen)); gSet('walkout', 1.3); sfx('step', { vol: 0.5 }) }
+      if (G.trip < G.trips.length && G.t >= G.trips[G.trip]) { G.phone = G.trip === G.phoneTrip; G.trip++; G.melonNow = G.trip === 3 && G.melon; say('bubble', G.phone ? L(GR.G.phone) : pickLine(GR.G.kitchen)); gSet('walkout', 1.3); sfx('step', { vol: 0.5 }) }
       else { say('bubble', pickLine(GR.G.turn)); gSet('turn', 0.3); sfx('cloth', { vol: 0.5 }) }
       break
-    case 'turn': gSet('away', rnd(lerp(2.7, 2.1, p), lerp(4.2, 3.2, p))); g.fake = false; break
+    case 'turn': gSet('away', G.learn && g.lap <= 2 ? (g.lap === 1 ? 6.5 : 5) : rnd(lerp(2.7, 2.1, p), lerp(4.2, 3.2, p))); g.fake = false; break
     case 'away': gSet('glance', lerp(0.8, 0.6, p)); sfx('cloth', { vol: 0.45 }); break
     case 'glance':
       if (!g.fake && G.t > 40 && rng() < 0.35) { g.fake = true; gSet('away', rnd(1.2, 2.0)); ev('fake') }
@@ -240,8 +248,8 @@ function advance() {
     case 'walkout': gSet('kitchen', rnd(4.6, 6.4)); break
     case 'kitchen': gSet('return', 1.0); sfx('step', { vol: 0.6 }); break
     case 'return': enterWatch('back'); break
-    case 'caught': gSet('heap', 1.1); addFood(clamp(G.bowl.length, 2, 4)); sfx('dish', { vol: 0.7 }); say('bubble', pickLine(GR.G.caught), 'loud', 1.8); bowlDom(true); break
-    case 'heap': g.resume = 2.2; say('bubble', pickLine(GR.G.aaan)); gSet('aaan', 1.0); ev('aaan'); break
+    case 'caught': gSet('heap', 1.1); addFood(clamp(G.bowl.length, 2, 4)); sfx('dish', { vol: 0.7 }); say('bubble', pickLine(GR.G.caught), 'loud', 1.8); cutin('g_heap'); bowlDom(true); break
+    case 'heap': g.resume = 2.2; say('bubble', pickLine(GR.G.aaan)); gSet('aaan', 1.0); cutin('g_aaan'); ev('aaan'); break
     case 'aaan':
       // ばあちゃんが一口食べさせる（1切れまるごと）
       // 続けて食べさせるほど一口が大きくなる（自分で食べるか、おかずを逃がすと戻る）
@@ -258,60 +266,43 @@ function eat(n, forced) {
 }
 // お茶碗をタップ: 一口食べる
 function bite() {
-  if (!(G.mode === 'play' || G.mode === 'tut') || G.over) return false
+  if (G.mode !== 'play' || G.over) return false
   if (G.biteCd > 0 || !G.bowl.length || G.held) return false
   G.biteCd = BITE_CD
   if (G.bit) { G.bowl.pop(); G.bit = false } else G.bit = true
   G.streak = 0
-  if (watching()) { G.g.since = 0; G.g.worried = false; G.watchedBites++; if (G.watchedBites % 5 === 0) say('bubble', pickLine(GR.G.good)) }
+  if (watching()) { G.g.since = 0; G.g.worried = false; G.watchedBites++; if (G.learn) G.learn.bite++; if (G.watchedBites % 5 === 0) say('bubble', pickLine(GR.G.good)) }
   ev('bite')
   sfx('chop', { vol: 0.5 })
   eat(1)
   if (!SIM) { const b = $('bowlArea'); b.classList.remove('chew'); void b.offsetWidth; b.classList.add('chew') }
   bowlDom()
-  if (G.tut && G.tut.step === 2) tutNext()
   return true
 }
 // おかずを持ち上げる / 置く
 function grab() {
-  if (!(G.mode === 'play' || G.mode === 'tut') || G.over || G.held || !G.bowl.length) return false
+  if (G.mode !== 'play' || G.over || G.held || !G.bowl.length) return false
   G.held = { food: G.bowl.pop(), bit: G.bit, t: 0 }; G.bit = false; ev('grab'); bowlDom()
   return true
 }
 function backToBowl() { if (!G.held) return; G.bowl.push(G.held.food); G.bit = G.held.bit; G.held = null; bowlDom() }
+// ルールは1つ: いっぱいの所に入れると、その場所が物音を立ててばあちゃんが振り向く
 function drop(spot) {
   const h = G.held; if (!h) return null
   if (!spot || !SPOTS.includes(spot)) { backToBowl(); return 'back' }
-  const s = G.spot[spot]
-  const give = () => { G.held = null; G.streak = 0; s.n++; G.given[spot]++; ev('give:' + spot); sfx('pop', { vol: 0.6 }); bowlDom(); if (G.tut && G.tut.step === 1) tutNext() }
-  const refuse = (line) => { backToBowl(); sayAt(spot, line); ev('full:' + spot); return 'full' }
-  const tut = !!G.tut
-  if (spot === 'dog') {
-    if (s.n >= CAPS.dog) return refuse(L(GR.SPOT.dog.full))
-    give(); sayAt('dog', L(GR.SPOT.dog.ok[0]))
-    if (s.n >= 3 && !s.burpAt && !tut) s.burpAt = G.t + 1.8
-    return 'ok'
+  const s = G.spot[spot], S = GR.SPOT[spot]
+  if (s.n >= s.cap) {
+    backToBowl(); s.react = 2.0; ev('full:' + spot)
+    sfx(spot === 'dog' ? 'burp' : spot === 'altar' || spot === 'vase' ? 'dish' : 'cloth', { vol: 0.8 })
+    caughtBy(spot, L(S.tell)); return 'caught'
   }
-  if (spot === 'kid') {
-    if (s.n >= s.cap && !tut) { backToBowl(); s.tattleT = 2.0; caughtBy('kid', L(GR.SPOT.kid.tell)); return 'caught' }
-    give(); sayAt('kid', L(GR.SPOT.kid.ok[G.given.kid % 2])); return 'ok'
-  }
-  if (spot === 'uncle') {
-    const u = s
-    if ((u.ph !== 'open' || u.n >= CAPS.uncle || u.awake > 0) && !tut) { backToBowl(); u.awake = 2.2; caughtBy('uncle', L(GR.SPOT.uncle.tell)); sfx('cloth', { vol: 0.6 }); return 'caught' }
-    give(); sayAt('uncle', L(GR.SPOT.uncle.ok[G.given.uncle % 2])); return 'ok'
-  }
-  if (spot === 'altar') {
-    if (G.aunt.st === 'pass' && !tut) { backToBowl(); G.aunt.notice = 1.8; caughtBy('altar', L(GR.SPOT.altar.tell)); return 'caught' }
-    if (s.n >= CAPS.altar) return refuse(L(GR.SPOT.altar.full))
-    give(); s.total++; sfx('rin', { vol: 0.45 })
-    if (s.n >= CAPS.altar && G.ghostFlag && !G.ghostUsed) { G.ghostUsed = true; G.ghostAt = G.t + 0.8 }
-    return 'ok'
-  }
-  if (spot === 'vase') {
-    if (s.n >= CAPS.vase) return refuse(L(GR.SPOT.vase.full))
-    give(); sayAt('vase', L(GR.SPOT.vase.ok[0])); return 'ok'
-  }
+  G.held = null; G.streak = 0; s.n++; G.given[spot]++; ev('give:' + spot); sfx('pop', { vol: 0.6 }); bowlDom()
+  if (G.learn && !watching()) G.learn.carry++
+  if (spot === 'altar') { s.total++; sfx('rin', { vol: 0.45 }); if (s.n >= s.cap && G.ghostFlag && !G.ghostUsed) { G.ghostUsed = true; G.ghostAt = G.t + 0.8 } }
+  else sayAt(spot, L(S.ok[G.given[spot] % S.ok.length]))
+  if (spot === 'dog' && s.n >= 3) { s.react = 0.9; sfx('burp', { vol: 0.5 }) }   // げっぷは小ネタ（バレない）
+  if (spot === 'kid' && s.n >= s.cap && G.kidBack && !G.kidBackAt) G.kidBackAt = G.t + 1.6
+  return 'ok'
 }
 // 見つかった: 「若いんやから！」で山盛りが倍
 function caughtBy(who, line) {
@@ -321,6 +312,7 @@ function caughtBy(who, line) {
   G.caught++; ev('caught:' + who)
   if (line) { if (who === 'gma') say('bubble', line, 'loud', 1.6); else sayAt(who, line, 'loud', 1.8) }
   gSet('caught', 1.2)
+  cutin('g_caught')
   sfx('j_caught', { vol: 0.55 })
   if (!SIM) { fx.shake(0.05, 0.3); fx.zoom(0.06, 0.4); Snd.duck(0.4, 1.4) }
 }
@@ -331,43 +323,42 @@ function stepGame(dt) {
   const g = G.g; g.t += dt
   if (G.biteCd > 0) G.biteCd -= dt
   if (G.held) G.held.t += dt
-  // 持っている所を見られたら見つかる
-  if (G.held && g.st === 'watch') caughtBy('gma', null)
+  // 持っている所を見られたら見つかる（初めての1回の最初の20秒は、お茶碗に戻して教えるだけ）
+  if (G.held && g.st === 'watch') { if (G.learn && G.t < 20) { backToBowl(); hint('seen') } else caughtBy('gma', null) }
   else if (G.held && watching()) backToBowl()
   // 見ている間に食べないと、心配して「あーん」
+  const wait = (G.learn && G.t < 20 ? 4.0 : WAIT) - 0.5 * Math.min(2, G.streak)
   if (g.st === 'watch' && G.bowl.length) {
     g.since += dt
-    if (!g.worried && g.since > WORRY - 0.5 * Math.min(2, G.streak)) { g.worried = true; say('bubble', pickLine(GR.G.worry)) }
-    if (g.since > WAIT - 0.5 * Math.min(2, G.streak)) { g.resume = g.dur - g.t; say('bubble', pickLine(GR.G.aaan)); gSet('aaan', 1.2); ev('aaan') }
+    if (!g.worried && g.since > wait - 1.0) { g.worried = true; say('bubble', pickLine(GR.G.worry)) }
+    if (g.since > wait) { g.resume = g.dur - g.t; say('bubble', pickLine(GR.G.aaan)); gSet('aaan', 1.2); cutin('g_aaan'); ev('aaan') }
   }
   if (g.t >= g.dur) advance()
-  // ポチ: 3つ目からげっぷ。見られていたら見つかる
-  const d = G.spot.dog
-  if (d.burpAt && G.t >= d.burpAt) { d.burpAt = 0; d.burpT = 1.2; sfx('burp', { vol: 0.8 }); ev('burp'); if (looking()) caughtBy('dog', L(GR.SPOT.dog.tell)) }
-  if (d.burpT > 0) d.burpT -= dt
-  // 消化
-  for (const k of ['dog', 'kid']) { const s = G.spot[k]; if (s.n > 0) { s.dt += dt; if (s.dt >= DIGEST[k]) { s.dt = 0; s.n--; ev('digest:' + k) } } else s.dt = 0 }
-  if (G.spot.kid.tattleT > 0) G.spot.kid.tattleT -= dt
-  // おじさんの口: 開いている時だけ入る
-  const u = G.spot.uncle
-  if (u.awake > 0) u.awake -= dt
-  u.t += dt; if (u.t >= u.dur) { u.t = 0; if (u.ph === 'open') { u.ph = 'shut'; u.dur = rnd(1.1, 1.7) } else { u.ph = 'open'; u.dur = rnd(2.0, 2.8) } }
-  // おばちゃんが廊下を通る（障子に影 から 入口に姿）
+  // 隠し場所: 消化と、物音の顔
+  for (const k of SPOTS) {
+    const s = G.spot[k]
+    if (s.react > 0) s.react -= dt
+    if (DIGEST[k] && s.n > 0) { s.dt += dt; if (s.dt >= DIGEST[k]) { s.dt = 0; s.n--; ev('digest:' + k) } } else s.dt = 0
+  }
+  // いとこの裏切り（まれ）: 満腹になったら自分の分をこっちのお茶碗へ
+  if (G.kidBackAt && G.t >= G.kidBackAt && G.kidBackAt > 0) { G.kidBackAt = -1; addFood(2); bowlDom(true); sfx('dish', { vol: 0.5 }); sayAt('kid', L(GR.SPOT.kid.back), '', 2.0); ev('kidback') }
+  // おばちゃんの「おすそわけ」: 障子に影 から 入口に姿、おかずが2つ増える
   const a = G.aunt
   a.t += dt
-  if (a.notice > 0) a.notice -= dt
-  if (a.st === 'none' && G.t >= a.next) { a.st = 'shadow'; a.t = 0; ev('aunt') ; sfx('step', { vol: 0.35 }) }
-  else if (a.st === 'shadow' && a.t >= 1.5) { a.st = 'pass'; a.t = 0; sfx('step', { vol: 0.45 }) }
-  else if (a.st === 'pass' && a.t >= 1.8) { a.st = 'none'; a.t = 0; a.next = G.t + rnd(15, 22) }
+  if (a.st === 'none' && G.t >= a.next && G.t < DUR - 8) { a.st = 'shadow'; a.t = 0; ev('aunt'); sfx('step', { vol: 0.35 }) }
+  else if (a.st === 'shadow' && a.t >= 1.2) { a.st = 'pass'; a.t = 0; sfx('step', { vol: 0.45 }); addFood(2, 'f_kabocha'); bowlDom(true); sfx('dish', { vol: 0.5 }); sayAt('aunt', pickLine(GR.AUNT), '', 2.0) }
+  else if (a.st === 'pass' && a.t >= 1.8) { a.st = 'none'; a.t = 0; a.next = G.t + rnd(30, 45) }
   // おじいちゃんが写真から出てきて食べる（まれ）
-  if (G.ghostAt && G.t >= G.ghostAt) { G.ghostAt = 0; G.ghostT = 2.8; G.spot.altar.n = 0; ev('ghost'); sfx('rin', { vol: 0.6 }); sfx('j_rare', { vol: 0.55 }); sayAt('altar', L(GR.GHOST), '', 2.4) }
+  if (G.ghostAt && G.t >= G.ghostAt) { G.ghostAt = 0; G.ghostT = 2.8; G.spot.altar.n = 0; ev('ghost'); cutin('ghost'); sfx('rin', { vol: 0.6 }); sfx('j_rare', { vol: 0.55 }); sayAt('altar', L(GR.GHOST), '', 2.4) }
   if (G.ghostT > 0) G.ghostT -= dt
   if (G.t >= DUR && !G.over) finish('time')
-  // 環境の音（遊びには関係しない）: 風鈴、おじさんのいびき
+  if (G.learn) learnStep()
+  // 環境の音（遊びには関係しない）: 風鈴、おじさんのいびき。ずっと鳴る物は扇風機だけ（セミは本人「うざい」で外した）
   if (!SIM) {
     G.chimeAt = G.chimeAt || 4
-    if (G.t >= G.chimeAt) { sfx('chime', { vol: 0.32 }); G.chimeAt = G.t + 11 + Math.random() * 10 }
-    if (u.ph === 'open' && u.t < dt * 1.5 && Math.random() < 0.5) sfx('snore', { vol: 0.16 })
+    if (G.t >= G.chimeAt) { sfx('chime', { vol: 0.26 }); G.chimeAt = G.t + 14 + Math.random() * 12 }
+    G.snoreAt = G.snoreAt || 2
+    if (G.t >= G.snoreAt) { if (G.spot.uncle.react <= 0) sfx('snore', { vol: 0.12 }); G.snoreAt = G.t + 9 + Math.random() * 6 }
   }
 }
 function finish(kind) {
@@ -385,26 +376,23 @@ function result() {
   return { kg, ko, caught: G.caught, forced: G.forced, title, points, sec: Math.round(G.t), given: { ...G.given }, stomach: G.stomach }
 }
 
-// ============================================================ チュートリアル（初回だけ。とばせる）
-function startTutorial() {
-  newGame(7); G.mode = 'tut'; G.bowl = ['f_karaage', 'f_onigiri', 'f_ebi']
-  G.tut = { step: 1, t: 0 }
-  gSet('away', 999); G.aunt.next = 999; unsay('bubble')
-  say('hint', L(['背中を向けた！\nおかずを指でつまんでポチまで', 'Her back is turned!\nDrag food from the bowl to the dog']), '', 999)
-  $('bSkip').hidden = false; bowlDom()
+// ============================================================ 初めての1回: 本番の中で、その時の状態に合わせて教える
+// 指示どおりの操作を待って止まる段階は作らない（何をしても・何もしなくても時間は進み、おかわりも来る）
+function learnStep() {
+  const l = G.learn, st = G.g.st
+  if ((l.carry >= 2 && l.bite >= 2) || G.t > 45 || G.over) { G.learn = null; store.set(TUT_KEY, '1'); if (G.texts.hint && G.texts.hint.until > G.clock + 1) unsay('hint'); return }
+  if (G.held || (l.shown === 'seen' && G.texts.hint)) return
+  if ((st === 'turn' || st === 'away' || st === 'walkout' || st === 'kitchen') && G.bowl.length && l.carry < 2) hint('carry')
+  else if (st === 'glance' && l.carry < 3) hint('glance')
+  else if (st === 'watch' && G.bowl.length && l.bite < 2) hint('bite')
 }
-function tutNext() {
-  const tu = G.tut; if (!tu) return
-  if (tu.step === 1) { tu.step = 2; tu.t = 0; gSet('glance', 0.6); G.g.dur = 0.6; say('hint', L(['こっちを向いた！\nお茶碗をタップでひと口', 'She turned!\nTap the bowl to take a bite']), '', 999) }
-  else if (tu.step === 2) { tu.step = 3; tu.t = 0; say('hint', L(['ベルトが最後の穴まで来たら負け\n見つかると山盛り倍', 'Belt at the last hole = game over\nCaught = double heap']), '', 3.2) }
+function hint(k) {
+  if (SIM) return
+  const l = G.learn
+  if (l && l.shown === k && G.texts.hint) return
+  if (l) l.shown = k
+  say('hint', L(GR.HINT[k]), '', k === 'seen' ? 2.2 : 30)
 }
-function stepTutorial(dt) {
-  const tu = G.tut; tu.t += dt
-  const g = G.g; g.t += dt; if (G.biteCd > 0) G.biteCd -= dt
-  if (tu.step === 2 && g.st === 'glance' && g.t >= g.dur) { gSet('watch', 999); say('bubble', L(GR.G.watch[0])) }
-  if (tu.step === 3 && tu.t > 3.3) endTutorial()
-}
-function endTutorial() { store.set(TUT_KEY, '1'); $('bSkip').hidden = true; unsay('hint'); startPlay() }
 
 // ============================================================ 文字（同時に2つまで）
 function say(slot, text, cls = '', sec) { if (SIM) return; G.texts[slot] = { text, cls, until: G.clock + (sec || Math.max(1.4, 0.9 + text.length * 0.09)), born: G.clock, at: null } }
@@ -430,6 +418,7 @@ function bowlDom(added) {
     im.style.transform = `rotate(${((i * 37) % 30) - 15}deg)`
     im.classList.toggle('bit', G.bit && i === want - 1)
   }
+  pile.classList.toggle('tower', want >= 9)
 }
 function beltDom() {
   const f = clamp(G.stomach / CAP, 0, 1), svg = $('beltSvg'), W = 400
@@ -471,7 +460,8 @@ function textsDom() {
   const now = G.clock
   for (const k in G.texts) { const v = G.texts[k]; if (v && now > v.until) G.texts[k] = null }
   const live = Object.entries(G.texts).filter(([, v]) => v).sort((a, b) => a[1].born - b[1].born)
-  while (live.length > 2) { const [k] = live.shift(); G.texts[k] = null }
+  // 同時に2つまで。教える一文（hint）は消さず、古い吹き出しから消す
+  while (live.length > 2) { const i = live.findIndex(([k]) => k !== 'hint'); const [k] = live.splice(i, 1)[0]; G.texts[k] = null }
   for (const k of ['bubble', 'sbubble', 'hint']) {
     const v = G.texts[k], e = $(k)
     if (!v) { if (!e.hidden) e.hidden = true; continue }
@@ -486,21 +476,33 @@ function textsDom() {
   }
   const gp = gma.position.clone(); gp.y += gma.userData.h * 1.02
   place($('bubble'), toScreen(gp))
-  const sv = G.texts.sbubble; if (sv) { const a = ANCHOR[sv.at].clone(); a.y += sv.at === 'altar' ? 0.32 : 0.14; place($('sbubble'), toScreen(a)) }
+  const sv = G.texts.sbubble; if (sv) {
+    const a = (ANCHOR[sv.at] || SAY_AT[sv.at]).clone(); a.y += sv.at === 'altar' ? 0.32 : 0.14
+    const e = $('sbubble'); place(e, toScreen(a))
+    // ばあちゃんの吹き出しと重なったら、その下へずらす
+    const g = $('bubble')
+    if (!g.hidden && !e.hidden) { const r1 = g.getBoundingClientRect(), r2 = e.getBoundingClientRect(); if (r1.left < r2.right && r2.left < r1.right && r1.top < r2.bottom && r2.top < r1.bottom) e.style.top = Math.round(r1.bottom + 8) + 'px' }
+  }
 }
 function ringsDom() {
   const box = $('rings')
-  const on = (!!G.held && (G.mode === 'play' || G.mode === 'tut')) || (G.mode === 'tut' && G.tut && G.tut.step === 1)
+  // 運んでいる間だけ、隠し場所に輪と「あと何個入るか」の粒を出す（いっぱいは赤い輪）
+  const on = !!G.held && G.mode === 'play'
   if (!on) { if (box.childElementCount) box.innerHTML = ''; return }
-  if (!box.childElementCount) for (const s of SPOTS) { const i = document.createElement('i'); i.dataset.s = s; box.appendChild(i) }
-  for (const i of box.children) { const p = spotXY(i.dataset.s); i.style.left = p.x + 'px'; i.style.top = p.y + 'px'; i.classList.toggle('hot', drag.over === i.dataset.s) }
+  if (!box.childElementCount) for (const s of SPOTS) { const i = document.createElement('i'); i.dataset.s = s; for (let k = 0; k < CAPS[s]; k++) i.appendChild(document.createElement('b')); box.appendChild(i) }
+  for (const i of box.children) {
+    const s = i.dataset.s, sp = G.spot[s], p = spotXY(s)
+    i.style.left = p.x + 'px'; i.style.top = p.y + 'px'
+    i.classList.toggle('hot', drag.over === s); i.classList.toggle('full', sp.n >= sp.cap)
+    ;[...i.children].forEach((b, k) => b.classList.toggle('on', k < sp.n))
+  }
 }
 
 // ---- 指の操作: お茶碗を押して動かす＝運ぶ、動かさず離す＝一口
 const drag = { id: null, x0: 0, y0: 0, moved: false, over: null }
 const bowlArea = $('bowlArea'), dragEl = $('drag')
 bowlArea.addEventListener('pointerdown', e => {
-  if (!(G.mode === 'play' || G.mode === 'tut') || G.over) return
+  if (G.mode !== 'play' || G.over) return
   e.preventDefault(); firstTouch()
   drag.id = e.pointerId; drag.x0 = e.clientX; drag.y0 = e.clientY; drag.moved = false; drag.over = null
   try { bowlArea.setPointerCapture(e.pointerId) } catch (er) {}
@@ -556,23 +558,22 @@ function cast(dt) {
   }
   const sp = G.spot
   // いとこ
-  setPaper(kid, sp.kid.tattleT > 0 ? 'k_tattle' : sp.kid.n >= sp.kid.cap ? 'k_full' : 'k_hungry', sp.kid.n >= sp.kid.cap ? 0.7 : 0.66)
+  setPaper(kid, sp.kid.react > 0 && G.g.st === 'caught' ? 'k_tattle' : sp.kid.n >= sp.kid.cap ? 'k_full' : 'k_hungry', sp.kid.n >= sp.kid.cap ? 0.7 : 0.66)
   // おじさん
-  setPaper(uncle, sp.uncle.awake > 0 ? 'u_awake' : (sp.uncle.ph === 'open' && sp.uncle.n < CAPS.uncle) ? 'u_open' : 'u_shut')
+  setPaper(uncle, sp.uncle.react > 0 ? 'u_awake' : sp.uncle.n >= sp.uncle.cap ? 'u_shut' : 'u_open')
   // ポチ: 食べるほど丸くなる
   const dn = sp.dog.n
-  setPaper(dog, sp.dog.burpT > 0 ? 'd_burp' : dn >= 3 ? 'd_fat' : 'd_beg', 0.32 + dn * 0.022)
-  if (sp.dog.burpAt) dog.position.x = POS.dog[0] + Math.sin(G.clock * 40) * 0.006; else dog.position.x = POS.dog[0]
+  setPaper(dog, sp.dog.react > 0 ? 'd_burp' : dn >= 2 ? 'd_fat' : 'd_beg', 0.32 + dn * 0.03)
+  dog.position.x = POS.dog[0] + (dn >= sp.dog.cap ? Math.sin(G.clock * 40) * 0.004 : 0)
   // ご先祖さまは、もらった数だけふくよかに（おじいちゃんが食べても戻らない）
   setPaper(photo, sp.altar.total >= 4 ? 'p2' : sp.altar.total >= 2 ? 'p1' : 'p0')
   for (let i = 0; i < altarFood.length; i++) { const p = altarFood[i]; p.visible = i < sp.altar.n; p.position.set(1.05 + ((i % 3) - 1) * 0.07, 0.45 + Math.floor(i / 3) * 0.04, R.z0 + 0.54) }
   for (let i = 0; i < vaseFood.length; i++) { const p = vaseFood[i]; p.visible = i < sp.vase.n; p.position.set(-0.95 + (i - 0.5) * 0.05, 0.52 + i * 0.02, R.z0 + 0.33); p.rotation.z = (i - 0.5) * 0.5 }
-  vase.rotation.z = sp.vase.n >= CAPS.vase ? 0.08 : 0
+  vase.rotation.z = sp.vase.react > 0 ? 0.5 : sp.vase.n >= CAPS.vase ? 0.08 : 0
   // おばちゃん
   const a = G.aunt
-  aunt.visible = a.st === 'pass' || a.notice > 0
-  if (a.notice > 0) { setPaper(aunt, 'a_notice', 1.38); aunt.position.set(0.46, 0, R.z0 - 0.1) }
-  else if (a.st === 'pass') { setPaper(aunt, 'a_walk', 1.42); aunt.position.set(lerp(0.3, 0.62, a.t / 1.8), 0, R.z0 - 0.35) }
+  aunt.visible = a.st === 'pass'
+  if (a.st === 'pass') { setPaper(aunt, 'a_notice', 1.38); aunt.position.set(0.46, 0, R.z0 - 0.1) }
   // おじいちゃん
   ghost.visible = G.ghostT > 0; if (ghost.visible) ghost.position.y = 0.62 + Math.sin(G.clock * 3) * 0.03
 }
@@ -600,20 +601,21 @@ function drawShoji() {
 // ============================================================ 遊びの開始・終わり
 function firstTouch() {
   Snd.init()
-  if (!Snd.loops.amb && !SIM) { Snd.loop('amb', S('amb_cicada'), 0.28); Snd.loop('tv', S('tv_laugh'), 0.06) }
+  if (!Snd.loops.amb && !SIM) { Snd.loop('amb', S('amb_fan'), 0.16); Snd.loop('tv', S('tv_laugh'), 0.035) }
 }
-function startPlay() {
+let resultShown = false
+function startPlay(learn = false) {
   const seed = params.has('seed') ? +params.get('seed') : (Date.now() % 100000) + G.playNo * 7
-  newGame(seed); G.mode = 'play'; G.texts = { bubble: null, sbubble: null, hint: null }
+  G.texts = { bubble: null, sbubble: null, hint: null }; resultShown = false
+  newGame(seed, learn); G.mode = 'play'
   if (window.TM) TM.start()
   bowlDom(); show('vPlay')
 }
 function begin() {
   firstTouch(); sfx('click', { vol: 0.6 }); G.playNo++
   show('vPlay')
-  if (!store.get(TUT_KEY) && !params.has('notut')) startTutorial(); else { $('bSkip').hidden = true; startPlay() }
+  startPlay(!store.get(TUT_KEY) && !params.has('notut'))
 }
-let resultShown = false
 function stepEnd() {
   if (G.over && G.mode === 'play' && G.endT > 2.4 && !resultShown) { resultShown = true; showResult() }
 }
@@ -691,7 +693,7 @@ function applyLang() {
   $('bStart').querySelector('span').textContent = T('start'); $('bHow').textContent = T('how'); $('bLang').textContent = T('lang')
   $('howH').textContent = T('how'); $('howWarn').textContent = L(GR.HOWTO.warn); $('bHowClose').querySelector('span').textContent = T('close'); $('lPrivacy').textContent = T('privacy')
   $('howCredit').textContent = 'Sounds: lonemonk (CC BY 3.0), Kenney, rubberduck and others (CC0)'
-  const ruleImg = ['img/g_away.webp', 'img/g_watch.webp', null]
+  const ruleImg = ['img/g_away.webp', 'img/g_watch.webp', 'img/d_burp.webp']
   $('howRules').innerHTML = ''
   GR.HOWTO.rules.forEach(([a, b], i) => {
     const li = document.createElement('li')
@@ -706,31 +708,38 @@ function applyLang() {
     const t = document.createElement('div'); t.innerHTML = '<b></b><span></span>'; t.querySelector('b').textContent = L(n); t.querySelector('span').textContent = L(d)
     li.append(im, t); $('howSpots').append(li)
   }
-  $('bSkip').textContent = T('skip'); $('bAgain').querySelector('span').textContent = T('again'); $('bSave').textContent = T('save'); $('bPost').textContent = T('post'); $('lMore').textContent = T('more')
+  $('bAgain').querySelector('span').textContent = T('again'); $('bSave').textContent = T('save'); $('bPost').textContent = T('post'); $('lMore').textContent = T('more')
 }
 $('bStart').onclick = begin
-$('bAgain').onclick = () => { resultShown = false; begin() }
+$('bAgain').onclick = begin
 $('bHow').onclick = () => { firstTouch(); show('vHow') }
 $('bHowClose').onclick = () => show('vTitle')
 $('bLang').onclick = () => { lang = lang === 'ja' ? 'en' : 'ja'; store.set('gr_lang', lang); applyLang() }
-$('bSkip').onclick = () => { if (G.mode === 'tut') endTutorial() }
 $('bMute').onclick = () => { muted = !muted; store.set('gr_mute', muted ? '1' : '0'); Snd.setMute(muted); $('bMute').classList.toggle('off', muted) }
 $('bMute').classList.toggle('off', muted)
 $('bSave').onclick = () => { if (window.TM) TM.share('save'); $('card').toBlob(b => { if (!b) return; const u = URL.createObjectURL(b), a = document.createElement('a'); a.href = u; a.download = 'grandma-refill.png'; document.body.appendChild(a); a.click(); a.remove(); setTimeout(() => URL.revokeObjectURL(u), 4000) }) }
 $('bPost').onclick = () => { if (window.TM) TM.share('x') }
 
-// チュートリアルの指（おかずを運ぶ / お茶碗をタップ）
+// 初めての1回の指（教えている一文に合わせて: 運ぶ / タップ）
 function fingerDom() {
   let f = $('finger')
-  const tu = G.mode === 'tut' && G.tut
-  if (!tu || tu.step > 2 || G.held) { if (f) f.hidden = true; return }
+  const h = G.mode === 'play' && G.learn && G.texts.hint && G.learn.shown
+  const kind = h === 'carry' ? 'carry' : h === 'bite' ? 'bite' : null
+  if (!kind || G.held) { if (f) f.hidden = true; return }
   if (!f) { f = document.createElement('div'); f.id = 'finger'; f.className = 'finger'; f.innerHTML = '<svg viewBox="0 0 44 44"><path d="M16 4c2 0 4 2 4 4v12l2-1c2-1 4 0 5 1l6 3c2 1 3 3 3 5l-2 10H14L8 28c-1-2 0-4 2-4s3 1 4 2V8c0-2 0-4 2-4z" fill="#fff" stroke="#222" stroke-width="2.5"/></svg>'; document.body.append(f) }
   f.hidden = false
   const b = bowlArea.getBoundingClientRect(), from = { x: b.left + b.width / 2, y: b.top + b.height * 0.35 }
   let p = from
-  if (tu.step === 1) { const to = spotXY('dog'), k = ease((G.clock % 1.6) / 1.2); p = { x: lerp(from.x, to.x, k), y: lerp(from.y, to.y, k) } }
+  if (kind === 'carry') { const to = spotXY(SPOTS.find(k => G.spot[k].n < G.spot[k].cap) || 'dog'), k = ease((G.clock % 1.6) / 1.2); p = { x: lerp(from.x, to.x, k), y: lerp(from.y, to.y, k) } }
   else { const k = (G.clock % 0.9) / 0.9; p = { x: from.x, y: from.y + (k < 0.5 ? k * 16 : (1 - k) * 16) } }
   f.style.left = p.x + 'px'; f.style.top = p.y + 'px'
+}
+// 大ゴマ: 見つかった・あーん・スイカ・おじいちゃん（絵だけ。文字は吹き出しに任せる）
+function cutin(img) {
+  if (SIM) return
+  const c = $('cutin'); if (!c) return
+  c.querySelector('img').src = 'img/' + img + '.webp'
+  c.classList.remove('on'); void c.offsetWidth; c.classList.add('on')
 }
 
 // ============================================================ ループ
@@ -741,7 +750,7 @@ function logic(dt) {
   if (G.mode === 'play') {
     if (G.bot && !SIM) G.bot(api, G.botSt || (G.botSt = { r: mulberry(5) }), dt)
     stepGame(dt); stepEnd()
-  } else if (G.mode === 'tut') stepTutorial(dt)
+  }
 }
 function render(dtR) {
   const vdt = fx.update(dtR)
@@ -754,7 +763,7 @@ function render(dtR) {
   drawShoji()
   look.update(); fx.applyCamera()
   renderer.render(scene, camera)
-  if (G.mode === 'play' || G.mode === 'tut') { textsDom(); beltDom(); coilDom(); ringsDom(); fingerDom() }
+  if (G.mode === 'play') { textsDom(); beltDom(); coilDom(); ringsDom(); fingerDom() }
   else { for (const k of ['bubble', 'sbubble', 'hint']) $(k).hidden = true; fingerDom() }
 }
 function loop(now) {
@@ -767,7 +776,7 @@ function loop(now) {
 
 // ============================================================ 検証用の窓口と bot
 const api = {
-  get state() { const g = G.g || {}; return { mode: G.mode, t: G.t, g: g.st, gt: g.t, gdur: g.dur, since: g.since, bowl: G.bowl ? G.bowl.length : 0, held: !!G.held, heldT: G.held ? G.held.t : 0, stomach: G.stomach, cap: CAP, caught: G.caught, over: G.over, spot: G.spot && JSON.parse(JSON.stringify(G.spot)), aunt: G.aunt && G.aunt.st, given: G.given, tut: G.tut && G.tut.step, biteCd: G.biteCd, ghostT: G.ghostT, melon: G.melon } },
+  get state() { const g = G.g || {}; return { mode: G.mode, t: G.t, g: g.st, gt: g.t, gdur: g.dur, since: g.since, bowl: G.bowl ? G.bowl.length : 0, held: !!G.held, heldT: G.held ? G.held.t : 0, stomach: G.stomach, cap: CAP, caught: G.caught, over: G.over, spot: G.spot && JSON.parse(JSON.stringify(G.spot)), aunt: G.aunt && G.aunt.st, given: G.given, learn: G.learn && { ...G.learn }, biteCd: G.biteCd, ghostT: G.ghostT, melon: G.melon } },
   bite, grab, drop, backToBowl, result, spotXY, SPOTS, CAPS,
   bowlXY() { const b = bowlArea.getBoundingClientRect(); return { x: b.left + b.width / 2, y: b.top + b.height * 0.4 } },
   texts: () => Object.values(G.texts).filter(Boolean).map(v => v.text),
@@ -788,7 +797,7 @@ const api = {
     tick(n = 1) { for (let i = 0; i < n; i++) logic(STEP) },
     speed(k) { G.speed = k },
     render() { render(0) },
-    G, newGame, startPlay, startTutorial, showResult, enterWatch, gSet, caughtBy, finish,
+    G, newGame, startPlay, showResult, enterWatch, gSet, caughtBy, finish,
     set(o) { Object.assign(G, o) },
     camera, scene, CAM, say,
   },
@@ -796,12 +805,14 @@ const api = {
 window.gr = api
 setTimeout(() => { window.__bot_reader = BOTS.reader })
 // bot: 人間の速さで動く（反応0.35秒・1回運ぶのに0.55秒・食べるのは見られて1.2秒たってから）
+const roomOf = (s, k) => s.spot[k].n < s.spot[k].cap
 const BOTS = {
   idle() {},
   eat(api, st) { api.bite() },
+  // 全部隠す: 背中を向けたら空きのある所へ運び続ける。見られていても食べない
   hide(api, st, dt) {
     const s = api.state
-    if (s.held) { if (s.heldT >= 0.55) { const free = SPOTS.filter(k => k === 'kid' || k === 'uncle' || (s.spot[k].n < CAPS[k])); api.drop(free[Math.floor(st.r() * free.length)] || 'dog') } return }
+    if (s.held) { if (s.heldT >= 0.55) { const free = SPOTS.filter(k => roomOf(s, k)); api.drop(free[Math.floor(st.r() * free.length)] || 'dog') } return }
     if (s.bowl && !['watch', 'caught', 'heap', 'aaan'].includes(s.g)) api.grab()
   },
   random(api, st, dt) {
@@ -820,13 +831,8 @@ const BOTS = {
     }
     const safe = (s.g === 'away' || s.g === 'turn' || s.g === 'walkout' || s.g === 'kitchen') && react
     if (safe && s.bowl) {
-      const sp = s.spot
-      const ok = []
-      if (sp.kid.n < sp.kid.cap) ok.push('kid')
-      if (sp.uncle.ph === 'open' && sp.uncle.t < sp.uncle.dur - 0.7 && sp.uncle.n < CAPS.uncle && sp.uncle.awake <= 0) ok.push('uncle')
-      if (s.aunt === 'none' && sp.altar.n < CAPS.altar) ok.push('altar')
-      if (sp.vase.n < CAPS.vase) ok.push('vase')
-      if (sp.dog.n < 2 || (sp.dog.n < CAPS.dog && s.g === 'kitchen' && s.gt < s.gdur - 2.5 && !sp.dog.burpAt)) ok.push('dog')
+      // 消化する所から先に（ポチ・いとこ・おじさん）、最後に仏壇と花びん
+      const ok = ['kid', 'dog', 'uncle', 'altar', 'vase'].filter(k => roomOf(s, k))
       // 残りが短い「よそ見」なら運ばない（人は残り時間を知らないので、待った長さで決める）
       const late = (s.g === 'away' && st.seen.t > 2.2)
       if (ok.length && !late) { st.target = ok[0]; api.grab() }
