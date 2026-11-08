@@ -1,0 +1,6 @@
+ART STYLE (strict): Japanese gag-manga illustration for a silly comedy game, printed and cut out like paper. Thick, confident, slightly wobbly hand-inked black outlines. Flat colors. Warm and funny, respectful, never scary. No realism, no photo, no 3D render, no gradients, no text. An original invented person, not a real person.
+SUBJECT: a sheet of THREE separate framed portrait pictures standing upright, each a dark lacquered wooden picture frame with a thin gold inner edge, containing a sepia-toned drawn portrait (head and shoulders) of the SAME kind old Japanese grandpa: bald head, white bushy eyebrows, a white mustache, a dark kimono collar, a gentle dignified face. The three pictures are identical except the grandpa's face gets fatter:
+1. LEFT: normal slim face, calm dignified smile.
+2. CENTER: noticeably chubby round cheeks and a double chin, the same dignified smile, looking pleased.
+3. RIGHT: extremely fat perfectly round face filling the whole frame, cheeks squashed against the frame edges, tiny happy eyes, still dignified.
+BACKGROUND: perfectly flat pure chroma green #00FF00 across the whole image, no floor, no shadow, no text, no letters anywhere. Do not use green on the pictures. Three frames side by side in three equal columns, same size, wide gaps, generous margin.

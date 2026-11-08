@@ -1,0 +1,36 @@
+- snd/amb_cicada.mp3: File:Chorus Cicada singing.ogg / Siobhan Leachman / CC0
+- snd/chime.mp3: File:Windchimes.ogg / Esc861 / Public domain
+- snd/chop1.mp3: 100 CC0 SFX / rubberduck / CC0
+- snd/chop2.mp3: 100 CC0 SFX / rubberduck / CC0
+- snd/chop3.mp3: 100 CC0 SFX / rubberduck / CC0
+- snd/dish1.mp3: 100 CC0 SFX / rubberduck / CC0
+- snd/dish2.mp3: 100 CC0 SFX / rubberduck / CC0
+- snd/dish3.mp3: 100 CC0 SFX / rubberduck / CC0
+- snd/step1.mp3: 100 CC0 SFX #2 / rubberduck / CC0
+- snd/step2.mp3: 100 CC0 SFX #2 / rubberduck / CC0
+- snd/step3.mp3: 100 CC0 SFX #2 / rubberduck / CC0
+- snd/step4.mp3: 100 CC0 SFX #2 / rubberduck / CC0
+- snd/burp.mp3: File:Burp.ogg / ezwa / Public domain
+- snd/rin.mp3: Bell dings/chimes / PWL / CC0
+- snd/pop1.mp3: 3 Pop Sounds / wubitog / CC0
+- snd/pop2.mp3: 3 Pop Sounds / wubitog / CC0
+- snd/pop3.mp3: 3 Pop Sounds / wubitog / CC0
+- snd/cloth1.mp3: 50 RPG sound effects / Kenney / CC0
+- snd/cloth2.mp3: 50 RPG sound effects / Kenney / CC0
+- snd/cloth3.mp3: 50 RPG sound effects / Kenney / CC0
+- snd/belt.mp3: 50 RPG sound effects / Kenney / CC0
+- snd/j_caught.mp3: 85 Short music jingles / Kenney / CC0
+- snd/j_end.mp3: 85 Short music jingles / Kenney / CC0
+- snd/j_ko.mp3: 85 Short music jingles / Kenney / CC0
+- snd/j_rare.mp3: 85 Short music jingles / Kenney / CC0
+- snd/click.mp3: Interface Sounds / Kenney / CC0
+- snd/chew1〜3.mp3: File:Chewing gum mouth open.ogg / ezwa / Public domain（0.7秒ずつ3か所切った）
+- snd/tv_laugh.mp3: File:72844 lonemonk approx-800-laughter-and-clapter-1.wav / lonemonk (freesound.org) / CC BY 3.0（隣の部屋のテレビとして、こもらせて30秒に切った。okan-door から流用）
+- snd/snore.mp3: File:Snoring of old man.ogg / Saaabaaato / CC0（5秒に切った。okan-door から流用）
+
+## 人物と絵
+- img/g_*.webp, k_*.webp, u_*.webp, d_*.webp, p0〜p2.webp, a_*.webp, ghost.webp, f_*.webp, vase.webp: このゲームのために作った架空の人物と小道具の切り絵（art/prompts が元の指示、art/key.py が切り抜き）
+- 部屋（畳・壁・障子・のれん・仏壇・ちゃぶ台・盆提灯）、お茶碗、ベルト、蚊取り線香、体重計はコードで描いた形とテクスチャ
+- js/look.js: tom3games の共通部品
+- vendor/three*.min.js: three.js（MIT）
+- フォント: Zen Kurenaido、Kosugi Maru（Google Fonts、SIL Open Font License）
