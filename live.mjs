@@ -27,12 +27,14 @@ for (const [name, bt, opts] of [['chromium', chromium, {}], ['webkit', webkit, {
   const bw = await p.evaluate(() => gr.bowlXY()); if (name === 'webkit') await p.touchscreen.tap(bw.x, bw.y); else await p.mouse.click(bw.x, bw.y)
   const ate = await p.evaluate(() => gr.state.stomach)
   await p.evaluate(() => { gr.dbg.pause(false); gr.dbg.speed(10) })
-  await p.waitForFunction(() => !document.querySelector('#vResult').hidden, null, { timeout: 30000 })
+  await p.waitForFunction(() => !document.querySelector('#vResult').hidden && window.__lastResult, null, { timeout: 30000 })
   const muteOk = await p.evaluate(() => window.__muteOk())
   out.push(`${name}: url=${p.url()} ver=${await p.evaluate(() => document.querySelector('script[src^="js/game.js"]').getAttribute('src'))}`)
   out.push(`${name}: ate=${ate} result=${JSON.stringify(await p.evaluate(() => window.__lastResult && window.__lastResult.title))} muteOk=${muteOk}`)
   await p.screenshot({ path: `shots/live-${name}.png` })
-  const og = await p.evaluate(async () => { const r = await fetch(document.querySelector('meta[property="og:image"]').content); return r.status + ' ' + r.headers.get('content-type') })
+  // og:image は横丁（別のドメイン）にあるので、ページの fetch でなくテスト側から取る
+  const ogUrl = await p.evaluate(() => document.querySelector('meta[property="og:image"]').content)
+  const og = await ctx.request.get(ogUrl).then(r => r.status() + ' ' + r.headers()['content-type'])
   out.push(`${name}: og=${og} errors=${errs.length ? errs.join(' | ') : 'none'}`)
   await b.close()
 }
