@@ -11,7 +11,7 @@ main{position:fixed;inset:0;height:100svh;overflow:hidden;z-index:3}
 .hand{font-family:"Zen Kurenaido","Hiragino Maru Gothic ProN",sans-serif}
 
 /* タイトル: 冷蔵庫に磁石で留めた、チラシの裏のメモ */
-#vTitle{display:flex;flex-direction:column;align-items:center;justify-content:space-between;padding:calc(env(safe-area-inset-top) + 7svh) 16px calc(env(safe-area-inset-bottom) + 5svh);pointer-events:none}
+#vTitle{display:flex;flex-direction:column;align-items:center;justify-content:space-between;padding:calc(env(safe-area-inset-top) + 7svh) 16px calc(calc(env(safe-area-inset-bottom) + var(--inapp-bot,0px)) + 5svh);pointer-events:none}
 #vTitle button{pointer-events:auto}
 .memo{position:relative;background:#fffdf8;padding:24px 20px 16px 24px;transform:rotate(-2.5deg);box-shadow:0 10px 26px rgba(0,0,0,.4);width:min(86vw,340px);
 }
@@ -62,7 +62,7 @@ html[lang=en] .bubble{white-space:normal;max-width:70vw}
 #coil{position:absolute;left:10px;top:calc(env(safe-area-inset-top) + 6px);width:62px;height:62px;filter:drop-shadow(0 2px 3px rgba(0,0,0,.5))}
 #coil svg{width:100%;height:100%;overflow:visible}
 /* お茶碗 */
-#bowlArea{position:absolute;left:50%;bottom:calc(env(safe-area-inset-bottom) + 50px);width:min(46vw,200px);height:min(34vw,150px);margin-left:calc(min(46vw,200px) / -2);touch-action:none;cursor:grab}
+#bowlArea{position:absolute;left:50%;bottom:calc(calc(env(safe-area-inset-bottom) + var(--inapp-bot,0px)) + 50px);width:min(46vw,200px);height:min(34vw,150px);margin-left:calc(min(46vw,200px) / -2);touch-action:none;cursor:grab}
 #bowlSvg{position:absolute;left:0;right:0;bottom:0;width:100%;height:auto;filter:drop-shadow(0 6px 6px rgba(0,0,0,.4))}
 #pile{position:absolute;left:8%;right:8%;bottom:56%;height:0}
 #pile img{position:absolute;bottom:0;width:38%;transform-origin:50% 100%;filter:drop-shadow(0 2px 2px rgba(0,0,0,.35));transition:transform .15s}
@@ -72,7 +72,7 @@ html[lang=en] .bubble{white-space:normal;max-width:70vw}
 #bowlArea.chew{animation:chew .45s ease-out}
 @keyframes chew{30%{transform:translateY(5px) scale(1.03,.97)}}
 /* ベルト（お腹の限界） */
-#belt{position:absolute;left:0;right:0;bottom:0;height:calc(env(safe-area-inset-bottom) + 46px);pointer-events:none}
+#belt{position:absolute;left:0;right:0;bottom:0;height:calc(calc(env(safe-area-inset-bottom) + var(--inapp-bot,0px)) + 46px);pointer-events:none}
 #belt svg{position:absolute;left:0;right:0;top:0;width:100%;height:46px}
 #belt.strain svg{animation:strain .25s infinite alternate}
 @keyframes strain{to{transform:scaleY(1.06)}}
@@ -103,7 +103,7 @@ html[lang=en] .bubble{white-space:normal;max-width:70vw}
 #bMute.off #mWave{display:none}#bMute:not(.off) #mX{display:none}
 
 /* 結果: 体重計のカード */
-#vResult{background:#3a2a1c;display:flex;flex-direction:column;align-items:center;padding:calc(env(safe-area-inset-top) + 10px) 12px calc(env(safe-area-inset-bottom) + 6px);gap:8px}
+#vResult{background:#3a2a1c;display:flex;flex-direction:column;align-items:center;padding:calc(env(safe-area-inset-top) + 10px) 12px calc(calc(env(safe-area-inset-bottom) + var(--inapp-bot,0px)) + 6px);gap:8px}
 #card{flex:none;display:block;transform:rotate(-.8deg);box-shadow:0 8px 22px rgba(0,0,0,.5)}
 .cardbox{flex:1;min-height:0;width:100%;display:flex;align-items:center;justify-content:center}
 .rbtns{display:flex;gap:14px;flex:none}
@@ -127,7 +127,7 @@ html[lang=en] .bubble{white-space:normal;max-width:70vw}
 #bootErr{position:fixed;left:8px;right:8px;bottom:8px;z-index:30;background:#fff;color:#b00;font:12px/1.4 monospace;white-space:pre-wrap;padding:10px;border-radius:8px}
 @media (max-height:700px){
   .memo{padding:18px 18px 12px 20px}.go{min-height:52px}
-  #bowlArea{bottom:calc(env(safe-area-inset-bottom) + 44px);width:min(40vw,170px);height:min(30vw,128px);margin-left:calc(min(40vw,170px) / -2)}
+  #bowlArea{bottom:calc(calc(env(safe-area-inset-bottom) + var(--inapp-bot,0px)) + 44px);width:min(40vw,170px);height:min(30vw,128px);margin-left:calc(min(40vw,170px) / -2)}
   #howRules img,#howRules svg{width:38px;height:38px}#howSpots img{width:30px;height:30px}
   .howpaper{gap:5px;padding:12px 14px 8px}
 }
